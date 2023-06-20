@@ -2,9 +2,11 @@ module Voronoize where
 
 import Color (CIELab (..))
 import Data.KdTree.Static qualified as KdTree
+import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Foreign.Storable (Storable)
 import Geometry
   ( Point (..),
     atPoint,
@@ -29,20 +31,24 @@ toAverage :: SumAndCount -> CIELab
 toAverage (SumAndCount (CIELab l a b) n) =
   CIELab (l / fromIntegral n) (a / fromIntegral n) (b / fromIntegral n)
 
-voronoize ::
-  Set Point ->
-  Grid CIELab ->
-  Grid CIELab
-voronoize refPoints grid = generateGrid (gridWidth grid) (gridHeight grid) $
-  \x y ->
-    avgColors Map.! gridAt nearestRefPoints x y
+voronoize :: Set Point -> Grid CIELab -> Grid CIELab
+voronoize refPoints grid =
+  generateGrid (gridWidth grid) (gridHeight grid) $
+    \x y -> avgs Map.! gridAt nearestRefPoints x y
   where
     tree = KdTree.buildWithDist pointCoords pointSquareDist (Set.toList refPoints)
     nearestRefPoints = nearestNeighbors grid tree
-    avgColors =
-      toAverage
-        <$> Map.fromListWith
-          (<>)
-          [ (atPoint nearestRefPoints p, trivialSum (atPoint grid p))
-            | p <- boxedPixels (wholeImage grid)
-          ]
+    avgs = averageColors grid nearestRefPoints
+
+averageColors ::
+  (Ord key, Storable key) =>
+  Grid CIELab ->
+  Grid key ->
+  Map key CIELab
+averageColors colors keys =
+  toAverage
+    <$> Map.fromListWith
+      (<>)
+      [ (atPoint keys p, trivialSum (atPoint colors p))
+        | p <- boxedPixels (wholeImage colors)
+      ]
