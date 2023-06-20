@@ -7,9 +7,11 @@ set -x
 script_dir=$(dirname "$(realpath "$0")")
 
 for file in "$script_dir"/*.png; do
-    if [[ $file != *-out.png ]]; then
+    if [[ "$file" != *-out.png && "$file" != *-comp.png ]]; then
         file_name=$(basename "$file")
-        output_file="${file_name%.png}-out.png"
-        time cabal run exes -- "$file" "$script_dir/$output_file" 250 0.5 1
+        output_file="$script_dir/${file_name%.png}-out.png"
+        time cabal run exes -- "$file" "$output_file" 250 0.5 1
+        comparison_file="$script_dir/${file_name%.png}-comp.png"
+        montage "$file" "$output_file" -geometry +0+0 -tile 2x1 "$comparison_file"
     fi
 done

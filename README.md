@@ -25,26 +25,13 @@ Usage: voronoizer <INPUT FILE> <OUTPUT FILE> <N> <UNIFORMITY> <FOCUS>
 
 ## Examples
 
-<img src="examples/unicorn.png" width="40%"/>
-<img src="examples/unicorn-out.png" width="40%"/>
-
-<img src="examples/ship.png" width="40%"/>
-<img src="examples/ship-out.png" width="40%"/>
-
-<img src="examples/equestrian.png" width="40%"/>
-<img src="examples/equestrian-out.png" width="40%"/>
-
-<img src="examples/dwarf.png" width="40%"/>
-<img src="examples/dwarf-out.png" width="40%"/>
-
-<img src="examples/edmund.png" width="40%"/>
-<img src="examples/edmund-out.png" width="40%"/>
-
-<img src="examples/discussion.png" width="40%"/>
-<img src="examples/discussion-out.png" width="40%"/>
-
-<img src="examples/orc.png" width="40%"/>
-<img src="examples/orc-out.png" width="40%"/>
+![Example 1: Unicorn](examples/unicorn-comp.png)
+![Example 2: Ship](examples/ship-comp.png)
+![Example 3: Equestrian](examples/equestrian-comp.png)
+![Example 4: Dwarf](examples/dwarf-comp.png)
+![Example 5: Edmund Gray](examples/edmund-comp.png)
+![Example 6: Discussion](examples/discussion-comp.png)
+![Example 7: Half Orc](examples/orc-comp.png)
 
 ## TODO
 
