@@ -2,8 +2,8 @@
 -- functions for manipulating it.
 module Geometry where
 
-import Data.KdTree.Dynamic (KdTree)
-import Data.KdTree.Dynamic qualified as KdTree
+import Data.KdTree.Static (KdTree)
+import Data.KdTree.Static qualified as KdTree
 import Foreign.Ptr (castPtr)
 import Foreign.Storable (Storable (..))
 import Image (Grid (..), generateGrid, gridAt)
@@ -90,10 +90,6 @@ splitAtYOffset (BoundingBox (Point x1 y1) (Point x2 y2)) ym =
   ( BoundingBox (Point x1 y1) (Point x2 (y1 + ym - 1)),
     BoundingBox (Point x1 (y1 + ym)) (Point x2 y2)
   )
-
--- | An empty KdTree of Points.
-emptyKdTree :: KdTree Float Point
-emptyKdTree = KdTree.emptyWithDist pointCoords pointSquareDist
 
 -- Returns a Grid of the nearest neighboring reference point to each pixel in
 -- the given image.

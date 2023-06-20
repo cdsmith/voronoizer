@@ -1,9 +1,19 @@
 module Voronoize where
 
 import Color (CIELab (..))
-import Data.KdTree.Dynamic (KdTree)
+import Data.KdTree.Static qualified as KdTree
 import Data.Map.Strict qualified as Map
-import Geometry (Point (..), atPoint, boxedPixels, nearestNeighbors, wholeImage)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Geometry
+  ( Point (..),
+    atPoint,
+    boxedPixels,
+    nearestNeighbors,
+    pointCoords,
+    pointSquareDist,
+    wholeImage,
+  )
 import Image (Grid (..), generateGrid, gridAt)
 
 data SumAndCount = SumAndCount !CIELab !Int
@@ -20,14 +30,15 @@ toAverage (SumAndCount (CIELab l a b) n) =
   CIELab (l / fromIntegral n) (a / fromIntegral n) (b / fromIntegral n)
 
 voronoize ::
-  KdTree Float Point ->
+  Set Point ->
   Grid CIELab ->
   Grid CIELab
 voronoize refPoints grid = generateGrid (gridWidth grid) (gridHeight grid) $
   \x y ->
     avgColors Map.! gridAt nearestRefPoints x y
   where
-    nearestRefPoints = nearestNeighbors grid refPoints
+    tree = KdTree.buildWithDist pointCoords pointSquareDist (Set.toList refPoints)
+    nearestRefPoints = nearestNeighbors grid tree
     avgColors =
       toAverage
         <$> Map.fromListWith

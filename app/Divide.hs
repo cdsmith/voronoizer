@@ -3,9 +3,8 @@
 module Divide where
 
 import Color (CIELab, averageColor, colorSquaredError)
-import Data.Foldable (foldl')
-import Data.KdTree.Dynamic (KdTree)
-import Data.KdTree.Dynamic qualified as KdTree
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Geometry
   ( BoundingBox (..),
     Point (..),
@@ -15,8 +14,6 @@ import Geometry
     boxedArea,
     boxedPixels,
     centerPoint,
-    emptyKdTree,
-    pointCoords,
     pointSquareDist,
     splitAtXOffset,
     splitAtYOffset,
@@ -88,48 +85,20 @@ equalAreaBoxes whole@(BoundingBox (Point x1 y1) (Point x2 y2)) n =
     dy = boxedArea whole / fromIntegral n / dx :: Float
 
 chooseReferencePoints ::
-  DivisionParams -> Grid CIELab -> BoundingBox -> KdTree Float Point
+  DivisionParams -> Grid CIELab -> BoundingBox -> Set Point
 chooseReferencePoints params colors box
-  | boxedArea box < areaThreshold || errorScore params colors box < 1 =
-      KdTree.singletonWithDist pointCoords pointSquareDist (centerPoint box)
+  | shouldStop params colors box = Set.singleton (centerPoint box)
   | otherwise =
-      foldl'
-        (\t !b -> foldl' (\t' !p -> KdTree.insert t' p) t (chooseReferencePoints params colors b))
-        emptyKdTree
+      foldMap
+        (chooseReferencePoints params colors)
         (divide params colors box)
+
+shouldStop :: DivisionParams -> Grid CIELab -> BoundingBox -> Bool
+shouldStop params colors box =
+  boxedArea box < areaThreshold
+    || meanSquaredError colors box < errorThreshold params colors box
   where
     areaThreshold = targetArea params / 10
-
-divide :: DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
-divide params colors box
-  | boxWidth box > boxHeight box = divideHorizontally params colors box
-  | otherwise = divideVertically params colors box
-
-divideHorizontally :: DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
-divideHorizontally params colors box = go 0 (boxWidth box)
-  where
-    go x width
-      | width < 4 = [left, right]
-      | leftErr < rightErr = go (x + halfWidth) halfWidth
-      | otherwise = go x halfWidth
-      where
-        halfWidth = width `div` 2
-        (left, right) = splitAtXOffset box (x + halfWidth)
-        leftErr = errorScore params colors left
-        rightErr = errorScore params colors right
-
-divideVertically :: DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
-divideVertically params colors box = go 0 (boxHeight box)
-  where
-    go y height
-      | height < 4 = [top, bottom]
-      | topErr < bottomErr = go (y + halfHeight) halfHeight
-      | otherwise = go y halfHeight
-      where
-        halfHeight = height `div` 2
-        (top, bottom) = splitAtYOffset box (y + halfHeight)
-        topErr = errorScore params colors top
-        bottomErr = errorScore params colors bottom
 
 meanSquaredError :: Grid CIELab -> BoundingBox -> Float
 meanSquaredError colors box =
@@ -139,14 +108,56 @@ meanSquaredError colors box =
     boxedColors = atPoint colors <$> boxedPixels box
     avgColor = averageColor boxedColors
 
-errorScore :: DivisionParams -> Grid CIELab -> BoundingBox -> Float
-errorScore params colors box = meanSquaredError colors box / errorThreshold
+errorThreshold :: DivisionParams -> Grid CIELab -> BoundingBox -> Float
+errorThreshold params colors box =
+  targetMSE params
+    * ((1 + targetArea params) / (1 + boxedArea box)) ** uniformity params
+    / focalFactor
   where
     focalDistance =
       (2 * pointSquareDist (centerPoint box) (centerPoint (wholeImage colors)))
         / boxedArea (wholeImage colors)
-    focalFactor = (1 / focus params + focus params) * focalDistance * focalDistance + focus params
-    errorThreshold =
-      targetMSE params
-        * ((1 + targetArea params) / (1 + boxedArea box)) ** uniformity params
-        / focalFactor
+    focalFactor =
+      (1 / focus params + focus params) * focalDistance * focalDistance
+        + focus params
+
+divide :: DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
+divide params colors box
+  | boxWidth box > boxHeight box = divideHorizontally params colors box
+  | otherwise = divideVertically params colors box
+
+divideHorizontally ::
+  DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
+divideHorizontally params colors box = go 0 (boxWidth box)
+  where
+    go x width
+      | width < 4 = [left, right]
+      | leftCost < rightCost = go (x + halfWidth) halfWidth
+      | otherwise = go x halfWidth
+      where
+        halfWidth = width `div` 2
+        (left, right) = splitAtXOffset box (x + halfWidth)
+        leftCost =
+          meanSquaredError colors left
+            / errorThreshold params colors left
+        rightCost =
+          meanSquaredError colors right
+            / errorThreshold params colors right
+
+divideVertically ::
+  DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
+divideVertically params colors box = go 0 (boxHeight box)
+  where
+    go y height
+      | height < 4 = [top, bottom]
+      | topCost < bottomCost = go (y + halfHeight) halfHeight
+      | otherwise = go y halfHeight
+      where
+        halfHeight = height `div` 2
+        (top, bottom) = splitAtYOffset box (y + halfHeight)
+        topCost =
+          meanSquaredError colors top
+            / errorThreshold params colors top
+        bottomCost =
+          meanSquaredError colors bottom
+            / errorThreshold params colors bottom

@@ -1,22 +1,16 @@
 module FineTune where
 
-import Codec.Picture (Image (..))
 import Color (CIELab)
-import Control.Monad (when)
 import Cost (cost)
 import Data.IntMap (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.KdTree.Dynamic (KdTree)
 import Data.KdTree.Dynamic qualified as KdTree
-import Data.List qualified as List
-import Data.Ord (comparing)
 import Data.PQueue.Prio.Min (MinPQueue)
 import Data.PQueue.Prio.Min qualified as MinPrio
 import Geometry (Point (..), pointCoords, pointSquareDist, wholeImage)
-import Image (Grid, fromImage, getImage, saveImage, toImage)
-import System.Environment (getArgs)
+import Image (Grid)
 import System.Random (randomRIO)
-import Voronoize (voronoize)
 
 newtype Candidates = Candidates
   { unCandidates :: IntMap (MinPQueue Float (KdTree Float Point))
@@ -76,29 +70,3 @@ summarize (Candidates cs) = do
           <> show (length q)
           <> " choices.  Best score = "
           <> show (fst (MinPrio.findMin q))
-
-doOptimize :: IO ()
-doOptimize = do
-  [input] <- getArgs
-  img <- getImage input
-  let cs = fromImage img
-  go (1 :: Int) img cs startingCandidates
-  where
-    go i img cs candidates = do
-      putStrLn "Selecting..."
-      refPoints <- select candidates
-      putStrLn "Mutating..."
-      refPoints' <- mutate (imageWidth img) (imageHeight img) refPoints
-      putStrLn "Augmenting..."
-      let candidates' = augment refPoints' cs candidates
-      summarize candidates'
-      when (i `mod` 100 == 0) $ do
-        let best =
-              List.minimumBy
-                (comparing fst)
-                (MinPrio.findMin <$> IntMap.elems (unCandidates candidates'))
-        let outFile = "out-" <> show i <> ".png"
-        putStrLn $ "Writing best score (" <> show (fst best) <> ") to " <> outFile
-        let cs' = voronoize (snd best) cs
-        saveImage outFile (toImage cs')
-      go (i + 1) img cs candidates'
