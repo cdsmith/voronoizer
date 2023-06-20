@@ -1,0 +1,20 @@
+cabal-version:      3.0
+name:               voronoizer
+version:            0.1.0.0
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Chris Smith
+maintainer:         cdsmith@gmail.com
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable voronoizer
+    import:           warnings
+    main-is:          Main.hs
+    other-modules:    Color, Cost, Divide, FineTune, Geometry, Image, Voronoize
+    build-depends:    base, containers, kdt, JuicyPixels, vector, random, pqueue
+    hs-source-dirs:   app
+    default-language: GHC2021
