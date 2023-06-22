@@ -34,6 +34,8 @@ import Stats
     buildStatTree,
     observation,
     sampleVariance,
+    treeRegion,
+    treeStats,
   )
 import System.Environment (getArgs)
 import Voronoize (voronoize)
@@ -95,19 +97,38 @@ equalAreaBoxes whole@(BoundingBox x1 y1 x2 y2) n =
 chooseReferencePoints ::
   DivisionParams -> Grid (CIELab Float) -> Direction -> BoundingBox -> Set Point
 chooseReferencePoints params colors dir box
-  | shouldStop params colors box = Set.singleton (centerPoint box)
+  | shouldStop params colors colorStats = Set.singleton (centerPoint box)
   | otherwise =
       foldMap
         (chooseReferencePoints params colors (orthogonal dir))
-        (divide dir params colors box)
+        (divide dir params colors colorStats)
+  where
+    colorStats = computeColorStats dir colors box
 
-shouldStop :: DivisionParams -> Grid (CIELab Float) -> BoundingBox -> Bool
-shouldStop params colors box =
-  fromIntegral (boxedArea box) < areaThreshold params
-    || colorVariance colors box < errorThreshold params colors box
+shouldStop ::
+  DivisionParams ->
+  Grid (CIELab Float) ->
+  StatTree BoundingBox CIELab Float ->
+  Bool
+shouldStop params colors colorStats =
+  fromIntegral (boxedArea (treeRegion colorStats)) < areaThreshold params
+    || sampleVariance (treeStats colorStats)
+      < errorThreshold params colors (treeRegion colorStats)
 
 areaThreshold :: DivisionParams -> Float
 areaThreshold params = targetArea params / 10
+
+computeColorStats ::
+  Direction ->
+  Grid (CIELab Float) ->
+  BoundingBox ->
+  StatTree BoundingBox CIELab Float
+computeColorStats dir colors = buildStatTree measure partition
+  where
+    measure box = foldMap (observation . atPoint colors) (boxedPixels box)
+    partition box
+      | boxDimension dir box < 2 = Nothing
+      | otherwise = Just (splitAtOffset dir box (boxDimension dir box `div` 2))
 
 colorVariance :: Grid (CIELab Float) -> BoundingBox -> Float
 colorVariance colors box =
@@ -150,10 +171,11 @@ divide ::
   Direction ->
   DivisionParams ->
   Grid (CIELab Float) ->
-  BoundingBox ->
+  StatTree BoundingBox CIELab Float ->
   [BoundingBox]
-divide dir params colors whole = boxes bestOffset
+divide dir params colors colorStats = boxes bestOffset
   where
+    whole = treeRegion colorStats
     minOffset =
       min (boxDimension dir whole `div` 2) . max 2 . round $
         areaThreshold params / fromIntegral (boxDimension (orthogonal dir) whole) / 2
@@ -165,12 +187,6 @@ divide dir params colors whole = boxes bestOffset
           fromIntegral (boxDimension dir whole - minOffset)
         )
 
-    statTree = buildStatTree measure partition whole
-    measure box = foldMap (observation . atPoint colors) (boxedPixels box)
-    partition box
-      | boxDimension dir box < minOffset = Nothing
-      | otherwise = Just (splitAtOffset dir box (boxDimension dir box `div` 2))
-
     boxStats (LeafStats leafBox leafStats) box
       | leafBox `boxSubset` box = leafStats
       | otherwise = mempty
@@ -181,7 +197,7 @@ divide dir params colors whole = boxes bestOffset
       | otherwise = mempty
 
     boxCost b =
-      sampleVariance (boxStats statTree b)
+      sampleVariance (boxStats colorStats b)
         / errorThreshold params colors b
     totalCost offset = sum (boxCost <$> boxes offset)
     boxes offset = [a, b]
