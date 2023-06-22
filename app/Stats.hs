@@ -1,14 +1,14 @@
 module Stats where
 
 import Color (CIELab)
-import Linear (Metric, norm, zero, (*^), (^+^), (^-^), (^/))
+import Linear (Metric, quadrance, zero, (*^), (^+^), (^-^), (^/))
 
 data Stats f a = Stats
   { sampleSize :: !Int,
     sampleMean :: !(f a),
     sampleSqDist :: !a
   }
-  deriving Show
+  deriving (Show)
 
 instance (Metric f, Floating a) => Semigroup (Stats f a) where
   {-# SPECIALIZE instance Semigroup (Stats CIELab Float) #-}
@@ -21,7 +21,7 @@ instance (Metric f, Floating a) => Semigroup (Stats f a) where
       m =
         (fromIntegral n1 *^ m1 ^+^ fromIntegral n2 *^ m2)
           ^/ fromIntegral n
-      sqd = sqd1 + sqd2 + norm delta * fromIntegral (n1 * n2) / fromIntegral n
+      sqd = sqd1 + sqd2 + quadrance delta * fromIntegral (n1 * n2) / fromIntegral n
 
 instance (Metric f, Floating a) => Monoid (Stats f a) where
   mempty = Stats 0 zero 0
@@ -35,7 +35,7 @@ sampleVariance (Stats n _ sqd) = sqd / fromIntegral n
 data StatTree region f a
   = LeafStats region (Stats f a)
   | BranchStats (StatTree region f a) region (Stats f a) (StatTree region f a)
-  deriving Show
+  deriving (Show)
 
 treeStats :: (Metric f, Floating a) => StatTree region f a -> Stats f a
 treeStats (LeafStats _ stats) = stats
