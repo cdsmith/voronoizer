@@ -14,7 +14,7 @@ common warnings
 executable voronoizer
     import:           warnings
     main-is:          Main.hs
-    other-modules:    Color, Cost, Divide, FineTune, Geometry, Image, Voronoize
+    other-modules:    Color, Cost, Divide, FineTune, Geometry, Image, Optimize, Voronoize
     build-depends:    base, containers, kdt, JuicyPixels, vector, random, pqueue
     hs-source-dirs:   app
     default-language: GHC2021

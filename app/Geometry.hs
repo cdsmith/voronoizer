@@ -36,7 +36,7 @@ pointSquareDist (Point x1 y1) (Point x2 y2) = fromIntegral (dx * dx + dy * dy)
     (dx, dy) = (x1 - x2, y1 - y2)
 
 -- | The color of a pixel at a Point.
-atPoint :: (Storable a) => Grid a -> Point -> a
+atPoint :: Storable a => Grid a -> Point -> a
 atPoint grid (Point x y) = gridAt grid x y
 
 -- | An axis-aligned bounding box on a 2D raster image.

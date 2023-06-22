@@ -46,7 +46,7 @@ generateGrid w h f =
   where
     indexToCoords i = (i `mod` w, i `div` w)
 
-gridAt :: (Storable a) => Grid a -> Int -> Int -> a
+gridAt :: Storable a => Grid a -> Int -> Int -> a
 gridAt (Grid w _ v) x y = v Vector.! (y * w + x)
 
 -- | Convert an image in RGB to a 2D vector of colors
