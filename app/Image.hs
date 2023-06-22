@@ -50,11 +50,13 @@ gridAt :: Storable a => Grid a -> Int -> Int -> a
 gridAt (Grid w _ v) x y = v Vector.! (y * w + x)
 
 -- | Convert an image in RGB to a 2D vector of colors
-fromImage :: Image PixelRGB8 -> Grid CIELab
+fromImage ::
+  (Storable a, Ord a, Floating a) => Image PixelRGB8 -> Grid (CIELab a)
 fromImage img = generateGrid (imageWidth img) (imageHeight img) $ \x y ->
   pixelToColor (pixelAt img x y)
 
-toImage :: Grid CIELab -> Image PixelRGB8
+toImage ::
+  (Storable a, Floating a, RealFrac a) => Grid (CIELab a) -> Image PixelRGB8
 toImage grid = generateImage render (gridWidth grid) (gridHeight grid)
   where
     render x y = colorToPixel (gridAt grid x y)

@@ -1,38 +1,44 @@
 module Cost where
 
-import Color (CIELab, averageColor, colorSquaredError)
+import Color (CIELab)
 import Data.KdTree.Dynamic (KdTree)
 import Data.KdTree.Dynamic qualified as KdTree
 import Data.Map.Strict qualified as Map
-import Data.Monoid (Sum (..))
+import Foreign.Storable (Storable)
 import Geometry (BoundingBox, Point, atPoint, boxedPixels)
 import Image (Grid (..))
+import Stats (observation, sampleSize, sampleVariance)
 
 meanSquaredError ::
-  Grid CIELab ->
+  (Floating a, Real a, Storable a) =>
+  Grid (CIELab a) ->
   BoundingBox ->
-  KdTree Float Point ->
-  Float
+  KdTree a Point ->
+  a
 meanSquaredError colors box refPoints =
-  getSum (foldMap mse proximities) / fromIntegral n
+  sum (zipWith (*) weights vars) / sum weights
   where
-    n = gridWidth colors * gridHeight colors
-    proximities =
-      Map.fromListWith
-        (<>)
-        [ (KdTree.nearest refPoints p, [atPoint colors p])
-          | p <- boxedPixels box
-        ]
-    mse cs =
-      let avg = averageColor cs
-       in foldMap (Sum . colorSquaredError avg) cs
+    stats =
+      Map.elems
+        ( Map.fromListWith
+            (<>)
+            [ (KdTree.nearest refPoints p, observation (atPoint colors p))
+              | p <- boxedPixels box
+            ]
+        )
+    weights = fromIntegral . sampleSize <$> stats
+    vars = sampleVariance <$> stats
 
-squaredSize :: KdTree Float Point -> Float
+squaredSize :: Num a => KdTree a Point -> a
 squaredSize refPoints = fromIntegral (n * n)
   where
     n = length refPoints
 
-cost :: Grid CIELab -> BoundingBox -> KdTree Float Point -> Float
+cost ::
+  (Floating a, Real a, Storable a) =>
+  Grid (CIELab a) ->
+  BoundingBox ->
+  KdTree a Point ->
+  a
 cost colors box refPoints =
-  5000000 * meanSquaredError colors box refPoints
-    + squaredSize refPoints
+  5000000 * meanSquaredError colors box refPoints + squaredSize refPoints

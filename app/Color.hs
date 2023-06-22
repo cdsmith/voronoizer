@@ -3,29 +3,37 @@ module Color where
 import Codec.Picture (PixelRGB8 (..))
 import Foreign.Ptr (castPtr)
 import Foreign.Storable (Storable (..))
+import Linear (Metric, Additive (..))
+import GHC.Generics (Generic)
 
-data CIELab = CIELab !Float !Float !Float
-  deriving (Eq, Ord, Show)
+data CIELab a = CIELab !a !a !a
+  deriving (Eq, Ord, Show, Functor, Foldable, Generic, Traversable)
 
-instance Storable CIELab where
-  sizeOf _ = 3 * sizeOf (undefined :: Float)
-  alignment _ = alignment (undefined :: Float)
+instance Applicative CIELab where
+  pure a = CIELab a a a
+  CIELab f g h <*> CIELab a b c = CIELab (f a) (g b) (h c)
+
+instance forall a. Storable a => Storable (CIELab a) where
+  {-# SPECIALIZE instance Storable (CIELab Float) #-}
+
+  sizeOf _ = 3 * sizeOf (undefined :: a)
+  alignment _ = alignment (undefined :: a)
 
   peek ptr = do
     l <- peek (castPtr ptr)
-    a <- peekByteOff ptr (sizeOf (undefined :: Float))
-    b <- peekByteOff ptr (2 * sizeOf (undefined :: Float))
+    a <- peekByteOff ptr (sizeOf (undefined :: a))
+    b <- peekByteOff ptr (2 * sizeOf (undefined :: a))
     return $ CIELab l a b
 
   poke ptr (CIELab l a b) = do
     poke (castPtr ptr) l
-    pokeByteOff ptr (sizeOf (undefined :: Float)) a
-    pokeByteOff ptr (2 * sizeOf (undefined :: Float)) b
+    pokeByteOff ptr (sizeOf (undefined :: a)) a
+    pokeByteOff ptr (2 * sizeOf (undefined :: a)) b
 
 -- | Convert a JuicyPixel to a CIELab
 --
 -- Math from https://github.com/antimatter15/rgb-lab/blob/master/color.js
-pixelToColor :: PixelRGB8 -> CIELab
+pixelToColor :: (Ord a, Floating a) => PixelRGB8 -> CIELab a
 pixelToColor (PixelRGB8 r g b) = CIELab ll aa bb
   where
     r' = fromIntegral r / 255
@@ -51,7 +59,7 @@ pixelToColor (PixelRGB8 r g b) = CIELab ll aa bb
 -- | Convert a JuicyPixel to a Color
 --
 -- Math from https://github.com/antimatter15/rgb-lab/blob/master/color.js
-colorToPixel :: CIELab -> PixelRGB8
+colorToPixel :: (Floating a, RealFrac a) => CIELab a -> PixelRGB8
 colorToPixel (CIELab cieL cieA cieB) = PixelRGB8 r'' g'' b''
   where
     x = cieA / 500 + y
@@ -74,24 +82,7 @@ colorToPixel (CIELab cieL cieA cieB) = PixelRGB8 r'' g'' b''
     g'' = round (max 0 (min 1 g') * 255)
     b'' = round (max 0 (min 1 b') * 255)
 
--- Determines the squared error between two colors in LAB color space.
-colorSquaredError :: CIELab -> CIELab -> Float
-colorSquaredError (CIELab l1 a1 b1) (CIELab l2 a2 b2) =
-  dl * dl + da * da + db * db
-  where
-    (dl, da, db) = (l1 - l2, a1 - a2, b1 - b2)
+instance Additive CIELab where
+  zero = pure 0
 
--- Averages a collection of colors in the LAB color space.
-averageColor :: (Functor f, Foldable f) => f CIELab -> CIELab
-averageColor cs
-  | null cs = CIELab 0 0 0
-  | otherwise = CIELab (l / n) (a / n) (b / n)
-  where
-    n = fromIntegral (length cs)
-    CIELab l a b =
-      foldr
-        ( \(CIELab l1 a1 b1) (CIELab l2 a2 b2) ->
-            CIELab (l1 + l2) (a1 + a2) (b1 + b2)
-        )
-        (CIELab 0 0 0)
-        cs
+instance Metric CIELab

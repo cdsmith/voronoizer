@@ -2,7 +2,7 @@
 
 module Divide where
 
-import Color (CIELab, averageColor, colorSquaredError)
+import Color (CIELab)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Geometry
@@ -10,9 +10,11 @@ import Geometry
     Point (..),
     atPoint,
     boxHeight,
+    boxSubset,
     boxWidth,
     boxedArea,
     boxedPixels,
+    boxesOverlap,
     centerPoint,
     pointSquareDist,
     splitAtXOffset,
@@ -27,6 +29,12 @@ import Image
     toImage,
   )
 import Optimize (OptimizationParams (..), minimize)
+import Stats
+  ( StatTree (..),
+    buildStatTree,
+    observation,
+    sampleVariance,
+  )
 import System.Environment (getArgs)
 import Voronoize (voronoize)
 
@@ -53,12 +61,14 @@ data DivisionParams = DivisionParams
     focus :: Float
   }
 
-estimateDivisionParams :: Int -> Float -> Float -> Grid CIELab -> DivisionParams
+estimateDivisionParams ::
+  Int -> Float -> Float -> Grid (CIELab Float) -> DivisionParams
 estimateDivisionParams n u f colors =
   DivisionParams
-    { targetArea = boxedArea (wholeImage colors) / fromIntegral n,
+    { targetArea =
+        fromIntegral (boxedArea (wholeImage colors)) / fromIntegral n,
       targetMSE =
-        sum [meanSquaredError colors box | box <- boxes]
+        sum [colorVariance colors box | box <- boxes]
           / fromIntegral (length boxes),
       uniformity = u,
       focus = f
@@ -67,27 +77,23 @@ estimateDivisionParams n u f colors =
     boxes = equalAreaBoxes (wholeImage colors) n
 
 equalAreaBoxes :: BoundingBox -> Int -> [BoundingBox]
-equalAreaBoxes whole@(BoundingBox (Point x1 y1) (Point x2 y2)) n =
+equalAreaBoxes whole@(BoundingBox x1 y1 x2 y2) n =
   [ BoundingBox
-      ( Point
-          (x1 + round (dx * fromIntegral i))
-          (y1 + round (dy * fromIntegral j))
-      )
-      ( Point
-          (min x2 (x1 + round (dx * fromIntegral (i + 1))))
-          (min y2 (y1 + round (dy * fromIntegral (j + 1))))
-      )
+      (x1 + round (dx * fromIntegral i))
+      (y1 + round (dy * fromIntegral j))
+      (min x2 (x1 + round (dx * fromIntegral (i + 1)) - 1))
+      (min y2 (y1 + round (dy * fromIntegral (j + 1)) - 1))
     | i <- [0 .. rows - 1],
       j <- [0 .. cols - 1]
   ]
   where
     rows = ceiling (sqrt (fromIntegral n) :: Float) :: Int
     cols = ceiling (fromIntegral n / fromIntegral rows :: Float) :: Int
-    dx = fromIntegral (boxWidth whole) / sqrt (fromIntegral n) :: Float
-    dy = boxedArea whole / fromIntegral n / dx :: Float
+    dx = fromIntegral (boxWidth whole) / fromIntegral cols :: Float
+    dy = fromIntegral (boxHeight whole) / fromIntegral rows :: Float
 
 chooseReferencePoints ::
-  DivisionParams -> Grid CIELab -> Direction -> BoundingBox -> Set Point
+  DivisionParams -> Grid (CIELab Float) -> Direction -> BoundingBox -> Set Point
 chooseReferencePoints params colors dir box
   | shouldStop params colors box = Set.singleton (centerPoint box)
   | otherwise =
@@ -95,31 +101,28 @@ chooseReferencePoints params colors dir box
         (chooseReferencePoints params colors (orthogonal dir))
         (divide dir params colors box)
 
-shouldStop :: DivisionParams -> Grid CIELab -> BoundingBox -> Bool
+shouldStop :: DivisionParams -> Grid (CIELab Float) -> BoundingBox -> Bool
 shouldStop params colors box =
-  boxedArea box < areaThreshold params
-    || meanSquaredError colors box < errorThreshold params colors box
+  fromIntegral (boxedArea box) < areaThreshold params
+    || colorVariance colors box < errorThreshold params colors box
 
 areaThreshold :: DivisionParams -> Float
 areaThreshold params = targetArea params / 10
 
-meanSquaredError :: Grid CIELab -> BoundingBox -> Float
-meanSquaredError colors box =
-  sum (colorSquaredError avgColor <$> boxedColors)
-    / fromIntegral (length boxedColors)
-  where
-    boxedColors = atPoint colors <$> boxedPixels box
-    avgColor = averageColor boxedColors
+colorVariance :: Grid (CIELab Float) -> BoundingBox -> Float
+colorVariance colors box =
+  sampleVariance (foldMap (observation . atPoint colors) (boxedPixels box))
 
-errorThreshold :: DivisionParams -> Grid CIELab -> BoundingBox -> Float
+errorThreshold :: DivisionParams -> Grid (CIELab Float) -> BoundingBox -> Float
 errorThreshold params colors box =
   targetMSE params
-    * ((1 + targetArea params) / (1 + boxedArea box)) ** uniformity params
+    * ((1 + targetArea params) / (1 + fromIntegral (boxedArea box)))
+      ** uniformity params
     / focalFactor
   where
     focalDistance =
       (2 * pointSquareDist (centerPoint box) (centerPoint (wholeImage colors)))
-        / boxedArea (wholeImage colors)
+        / fromIntegral (boxedArea (wholeImage colors))
     focalFactor =
       (1 / focus params + focus params) * focalDistance * focalDistance
         + focus params
@@ -144,19 +147,43 @@ splitAtOffset Vertical = splitAtYOffset
 splitAtOffset Horizontal = splitAtXOffset
 
 divide ::
-  Direction -> DivisionParams -> Grid CIELab -> BoundingBox -> [BoundingBox]
-divide dir params colors box = boxes bestOffset
+  Direction ->
+  DivisionParams ->
+  Grid (CIELab Float) ->
+  BoundingBox ->
+  [BoundingBox]
+divide dir params colors whole = boxes bestOffset
   where
     minOffset =
-      min (fromIntegral (boxDimension dir box) - 1) . max 2 $
-        areaThreshold params / fromIntegral (boxDimension (orthogonal dir) box) / 2
+      min (boxDimension dir whole `div` 2) . max 2 . round $
+        areaThreshold params / fromIntegral (boxDimension (orthogonal dir) whole) / 2
     bestOffset =
       minimize
         (OptimizationParams {optimizeTopK = 4, optimizeCloseEnough = 4})
         totalCost
-        (minOffset, fromIntegral (boxDimension dir box) - minOffset - 1)
-    boxCost b = meanSquaredError colors b / errorThreshold params colors b
+        ( fromIntegral minOffset,
+          fromIntegral (boxDimension dir whole - minOffset)
+        )
+
+    statTree = buildStatTree measure partition whole
+    measure box = foldMap (observation . atPoint colors) (boxedPixels box)
+    partition box
+      | boxDimension dir box < minOffset = Nothing
+      | otherwise = Just (splitAtOffset dir box (boxDimension dir box `div` 2))
+
+    boxStats (LeafStats leafBox leafStats) box
+      | leafBox `boxSubset` box = leafStats
+      | otherwise = mempty
+    boxStats (BranchStats leftTree branchBox branchStats rightTree) box
+      | branchBox `boxSubset` box = branchStats
+      | boxesOverlap branchBox box =
+          boxStats leftTree box <> boxStats rightTree box
+      | otherwise = mempty
+
+    boxCost b =
+      sampleVariance (boxStats statTree b)
+        / errorThreshold params colors b
     totalCost offset = sum (boxCost <$> boxes offset)
     boxes offset = [a, b]
       where
-        (a, b) = splitAtOffset dir box (round offset)
+        (a, b) = splitAtOffset dir whole (round offset)

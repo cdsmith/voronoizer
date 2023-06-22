@@ -18,20 +18,20 @@ import Geometry
   )
 import Image (Grid (..), generateGrid, gridAt)
 
-data SumAndCount = SumAndCount !CIELab !Int
+data SumAndCount = SumAndCount !(CIELab Float) !Int
 
 instance Semigroup SumAndCount where
   SumAndCount (CIELab l1 a1 b1) n1 <> SumAndCount (CIELab l2 a2 b2) n2 =
     SumAndCount (CIELab (l1 + l2) (a1 + a2) (b1 + b2)) (n1 + n2)
 
-trivialSum :: CIELab -> SumAndCount
+trivialSum :: CIELab Float -> SumAndCount
 trivialSum c = SumAndCount c 1
 
-toAverage :: SumAndCount -> CIELab
+toAverage :: SumAndCount -> CIELab Float
 toAverage (SumAndCount (CIELab l a b) n) =
   CIELab (l / fromIntegral n) (a / fromIntegral n) (b / fromIntegral n)
 
-voronoize :: Set Point -> Grid CIELab -> Grid CIELab
+voronoize :: Set Point -> Grid (CIELab Float) -> Grid (CIELab Float)
 voronoize refPoints grid =
   generateGrid (gridWidth grid) (gridHeight grid) $
     \x y -> avgs Map.! gridAt nearestRefPoints x y
@@ -42,9 +42,9 @@ voronoize refPoints grid =
 
 averageColors ::
   (Ord key, Storable key) =>
-  Grid CIELab ->
+  Grid (CIELab Float) ->
   Grid key ->
-  Map key CIELab
+  Map key (CIELab Float)
 averageColors colors keys =
   toAverage
     <$> Map.fromListWith
